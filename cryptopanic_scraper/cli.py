@@ -15,6 +15,10 @@ def parse_args(argv=None):
                         choices=["all", "hot", "rising", "bullish", "bearish",
                                  "lol", "commented", "important", "saved"],
                         help="News filter type (default: all)")
+    parser.add_argument("-c", "--category", default=None,
+                        choices=["price-analysis", "regulation", "media",
+                                 "ico-news", "events"],
+                        help="News category to scrape from (e.g. price-analysis, regulation)")
     parser.add_argument("-s", "--headless", action="store_true",
                         help="Run Chrome in headless mode")
     parser.add_argument("--manual-challenge-timeout", type=int, default=300,

@@ -2,7 +2,7 @@
 
 # CSS Selectors — single source of truth. If CryptoPanic changes their DOM, update here only.
 SELECTORS = {
-    "news_row": "div.news-row.news-row-link",
+    "news_row": "div.news-row:not(.news-row-sponsored)",
     "load_more": "btn-outline-primary",
     "time": "time",
     "title": "span.title-text span:first-child",
@@ -46,10 +46,19 @@ CHECKPOINT_DIR = "data/checkpoints"
 DEFAULT_OUTPUT_DIR = "data"
 BASE_URL = "https://www.cryptopanic.com/news"
 
+# Valid news categories (URL path segments under /news/)
+VALID_CATEGORIES = [
+    "price-analysis",
+    "regulation",
+    "media",
+    "ico-news",
+    "events",
+]
+
 # Bulk JS extraction script — extracts all visible articles from the DOM in one call.
 # Returns a list of plain objects, avoiding any stale-element issues.
 EXTRACT_ARTICLES_JS = """
-return Array.from(document.querySelectorAll('div.news-row.news-row-link')).map((el, idx) => {
+return Array.from(document.querySelectorAll('div.news-row:not(.news-row-sponsored)')).map((el, idx) => {
     const timeEl = el.querySelector('time');
     const rawDate = timeEl ? timeEl.getAttribute('datetime') : null;
     // Normalize to ISO 8601 — the attribute may be a locale string, not ISO

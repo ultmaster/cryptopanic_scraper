@@ -13,8 +13,9 @@ logger = logging.getLogger("cryptopanic")
 class CheckpointManager:
     def __init__(self, filter_type: str, start_date: str | None,
                  end_date: str, checkpoint_dir: str = "data/checkpoints",
-                 interval: int = 50):
+                 interval: int = 50, category: str | None = None):
         self.filter_type = filter_type
+        self.category = category or "all"
         self.start_date = start_date or "none"
         self.end_date = end_date
         self.checkpoint_dir = checkpoint_dir
@@ -34,7 +35,7 @@ class CheckpointManager:
     def checkpoint_path(self) -> str:
         return os.path.join(
             self.checkpoint_dir,
-            f"checkpoint_{self.filter_type}_{self.start_date}_{self.end_date}.json",
+            f"checkpoint_{self.filter_type}_{self.category}_{self.start_date}_{self.end_date}.json",
         )
 
     def add_article(self, article_dict: dict) -> bool:

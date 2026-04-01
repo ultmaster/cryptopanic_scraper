@@ -72,6 +72,7 @@ This project was designed to scrape the data from their website so it could be l
 ### Features
 
 - **Checkpointing** -- saves progress periodically and on Ctrl+C; resume any interrupted scrape with `--resume`
+- **Category support** -- scrape specific news categories: `price-analysis`, `regulation`, `media`, `ico-news`, `events`
 - **Date range scraping** -- specify `--start-date` and `--end-date` to target a specific time window (supports data back to Jan 2016)
 - **Verbose logging** -- Python `logging` to both console and file; use `-v` for DEBUG output
 - **Failure handling** -- per-article, page-level, and driver-level retries with exponential backoff; single article failures never crash the whole scrape
@@ -137,6 +138,31 @@ python -m cryptopanic_scraper
 Filter by news type:
 ```sh
 python -m cryptopanic_scraper --filter hot --headless
+```
+
+### Category Scraping
+
+Scrape a specific news category instead of the full feed:
+```sh
+# Price analysis articles
+python -m cryptopanic_scraper --category price-analysis --headless
+
+# Regulation news
+python -m cryptopanic_scraper --category regulation --headless
+
+# Media / video content
+python -m cryptopanic_scraper --category media --headless
+
+# ICO and fundraising news
+python -m cryptopanic_scraper --category ico-news --headless
+
+# Events
+python -m cryptopanic_scraper --category events --headless
+```
+
+Combine category with a filter:
+```sh
+python -m cryptopanic_scraper --category regulation --filter hot --headless
 ```
 
 Limit the number of articles:
@@ -234,6 +260,7 @@ This is intentionally heuristic. Some publishers will return clean article text,
 ```
 usage: __main__.py [-h] [-v]
                    [-f {all,hot,rising,bullish,bearish,lol,commented,important,saved}]
+                   [-c {price-analysis,regulation,media,ico-news,events}]
                    [-s] [--manual-challenge-timeout MANUAL_CHALLENGE_TIMEOUT]
                    [--debugger-address DEBUGGER_ADDRESS] [--download-content]
                    [--content-max-chars CONTENT_MAX_CHARS]
@@ -247,6 +274,8 @@ options:
   -h, --help            show this help message and exit
   -v, --verbose         Increase output verbosity (DEBUG level logging)
   -f, --filter          News filter type (default: all)
+  -c, --category        News category to scrape from (e.g. price-analysis,
+                        regulation, media, ico-news, events)
   -s, --headless        Run Chrome in headless mode
   --manual-challenge-timeout
                         When not headless, wait up to N seconds for you to
@@ -295,7 +324,8 @@ tests/                    # Unit tests
 Output is saved as JSONL (one JSON object per line) in the `data/` directory:
 
 ```
-data/cryptopanic_all_2016-01-01_2026-04-01.jsonl
+data/cryptopanic_all_all_2016-01-01_2026-04-01.jsonl          # no category
+data/cryptopanic_all_regulation_2016-01-01_2026-04-01.jsonl   # with --category regulation
 ```
 
 Each line contains:
@@ -314,10 +344,23 @@ Each line contains:
 
 ## Testing
 
-Run the test suite:
+Run the unit test suite:
 ```sh
-python -m pytest tests/ -v
+python -m pytest tests/ -v --ignore=tests/test_category_integration.py
 ```
+
+Run the integration tests (requires Chrome running with remote debugging on port 9222):
+```sh
+# 1. Launch Chrome with remote debugging:
+google-chrome --remote-debugging-port=9222 \
+    --user-data-dir=/tmp/cryptopanic-debug-profile \
+    'https://www.cryptopanic.com/news'
+
+# 2. Run integration tests:
+python -m pytest tests/test_category_integration.py -v
+```
+
+The integration tests connect to Chrome on port 9222 and verify that each news category (`price-analysis`, `regulation`, `media`, `ico-news`, `events`) loads correctly and the JS extraction script works.
 
 If you're interested in analyzing the data, check out the [jupyter](https://github.com/GrilledChickenThighs/cryptopanic_scraper/tree/master/jupyter) directory for getting started.
 

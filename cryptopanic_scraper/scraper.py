@@ -73,6 +73,7 @@ class CryptoPanicScraper:
             start_date=args.start_date,
             end_date=args.end_date,
             interval=args.checkpoint_interval,
+            category=args.category,
         )
         self.writer = JSONLWriter(
             output_dir=args.output_dir,
@@ -80,6 +81,7 @@ class CryptoPanicScraper:
             start_date=args.start_date,
             end_date=args.end_date,
             resume=args.resume,
+            category=args.category,
         )
         self._driver_reconnects = 0
         self._scrape_start_time = None
@@ -132,7 +134,10 @@ class CryptoPanicScraper:
     )
     def navigate_to_feed(self):
         """Navigate to the CryptoPanic news feed."""
-        url = f"{config.BASE_URL}?filter={self.args.filter}"
+        base = config.BASE_URL
+        if self.args.category:
+            base = f"{config.BASE_URL}/{self.args.category}"
+        url = f"{base}?filter={self.args.filter}"
         if self._maybe_reuse_attached_feed(url):
             return
 
@@ -464,7 +469,7 @@ class CryptoPanicScraper:
         # Scroll each incomplete row into view and re-extract
         retry_js = """
         const indices = arguments[0];
-        const rows = document.querySelectorAll('div.news-row.news-row-link');
+        const rows = document.querySelectorAll('div.news-row:not(.news-row-sponsored)');
         const results = [];
         for (const idx of indices) {
             if (idx >= rows.length) continue;
@@ -814,7 +819,7 @@ class CryptoPanicScraper:
             # Check if we've scrolled past start_date
             if self.args.start_date:
                 last_date = self.driver.execute_script("""
-                    const rows = document.querySelectorAll('div.news-row.news-row-link');
+                    const rows = document.querySelectorAll('div.news-row:not(.news-row-sponsored)');
                     if (rows.length === 0) return null;
                     const last = rows[rows.length - 1];
                     const t = last.querySelector('time');
@@ -839,7 +844,7 @@ class CryptoPanicScraper:
                 # Periodic progress during loading — include oldest visible date
                 if self.checkpoint.pages_loaded % 10 == 0:
                     oldest_vis = self.driver.execute_script("""
-                        const rows = document.querySelectorAll('div.news-row.news-row-link');
+                        const rows = document.querySelectorAll('div.news-row:not(.news-row-sponsored)');
                         if (rows.length === 0) return null;
                         const t = rows[rows.length - 1].querySelector('time');
                         if (!t) return null;

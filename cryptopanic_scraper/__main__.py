@@ -10,8 +10,8 @@ def main():
     logger = setup_logging(verbose=args.verbose, log_file=args.log_file)
     logger.info("CryptoPanic Scraper starting...")
     logger.info(
-        "Config: filter=%s, start=%s, end=%s, limit=%s, headless=%s",
-        args.filter, args.start_date, args.end_date, args.limit, args.headless,
+        "Config: filter=%s, category=%s, start=%s, end=%s, limit=%s, headless=%s",
+        args.filter, args.category, args.start_date, args.end_date, args.limit, args.headless,
     )
 
     scraper = CryptoPanicScraper(args)

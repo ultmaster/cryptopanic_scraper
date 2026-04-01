@@ -74,6 +74,7 @@ def test_load_more_looks_stuck_false_for_normal_button():
 def test_maybe_reuse_attached_feed_when_rows_present():
     args = SimpleNamespace(
         filter="all",
+        category=None,
         start_date=None,
         end_date="2026-04-01",
         checkpoint_interval=50,
@@ -90,7 +91,7 @@ def test_maybe_reuse_attached_feed_when_rows_present():
         page_source = "<html></html>"
 
         def find_elements(self, by, selector):
-            return [object()] if selector == "div.news-row.news-row-link" else []
+            return [object()] if selector == "div.news-row:not(.news-row-sponsored)" else []
 
         def execute_script(self, script):
             return None

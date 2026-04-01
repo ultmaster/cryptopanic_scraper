@@ -85,7 +85,11 @@ def test_finalize():
 def test_filename_format():
     with tempfile.TemporaryDirectory() as tmpdir:
         writer = JSONLWriter(tmpdir, "hot", "2024-01-01", "2024-12-31")
-        assert "cryptopanic_hot_2024-01-01_2024-12-31.jsonl" in writer.filepath
+        assert "cryptopanic_hot_all_2024-01-01_2024-12-31.jsonl" in writer.filepath
 
         writer2 = JSONLWriter(tmpdir, "all", None, "2024-12-31")
-        assert "cryptopanic_all_all_2024-12-31.jsonl" in writer2.filepath
+        assert "cryptopanic_all_all_all_2024-12-31.jsonl" in writer2.filepath
+
+        writer3 = JSONLWriter(tmpdir, "all", "2024-01-01", "2024-12-31",
+                              category="regulation")
+        assert "cryptopanic_all_regulation_2024-01-01_2024-12-31.jsonl" in writer3.filepath

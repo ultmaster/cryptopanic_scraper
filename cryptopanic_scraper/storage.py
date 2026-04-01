@@ -11,9 +11,10 @@ logger = logging.getLogger("cryptopanic")
 class JSONLWriter:
     def __init__(self, output_dir: str, filter_type: str,
                  start_date: str | None, end_date: str,
-                 resume: bool = False):
+                 resume: bool = False, category: str | None = None):
         Path(output_dir).mkdir(parents=True, exist_ok=True)
-        filename = f"cryptopanic_{filter_type}_{start_date or 'all'}_{end_date}.jsonl"
+        cat = category or "all"
+        filename = f"cryptopanic_{filter_type}_{cat}_{start_date or 'all'}_{end_date}.jsonl"
         self.filepath = os.path.join(output_dir, filename)
         self._buffer: list[dict] = []
         self._total_written: int = 0
