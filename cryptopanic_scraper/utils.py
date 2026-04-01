@@ -75,11 +75,12 @@ def resolve_single_url(cryptopanic_url: str, timeout: int = 10,
             logger.warning("URL resolution failed for %s: %s", cryptopanic_url, e2)
             return ""
 
-    # Validate that we actually left CryptoPanic
+    # CryptoPanic requires authentication for redirects to publisher URLs.
+    # This is expected — not an error.
     if _is_cryptopanic_url(resolved):
-        logger.warning(
-            "URL resolved to CryptoPanic page, not publisher: %s -> %s",
-            cryptopanic_url, resolved,
+        logger.debug(
+            "URL stayed on CryptoPanic (auth required): %s",
+            cryptopanic_url,
         )
         return ""
     return resolved

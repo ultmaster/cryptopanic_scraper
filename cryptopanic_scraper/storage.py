@@ -10,21 +10,27 @@ logger = logging.getLogger("cryptopanic")
 
 class JSONLWriter:
     def __init__(self, output_dir: str, filter_type: str,
-                 start_date: str | None, end_date: str):
+                 start_date: str | None, end_date: str,
+                 resume: bool = False):
         Path(output_dir).mkdir(parents=True, exist_ok=True)
         filename = f"cryptopanic_{filter_type}_{start_date or 'all'}_{end_date}.jsonl"
         self.filepath = os.path.join(output_dir, filename)
         self._buffer: list[dict] = []
         self._total_written: int = 0
 
-        # Count existing lines if appending (for resume)
         if os.path.exists(self.filepath):
-            with open(self.filepath, "r") as f:
-                self._total_written = sum(1 for _ in f)
-            logger.info(
-                "Appending to existing file with %d articles: %s",
-                self._total_written, self.filepath,
-            )
+            if resume:
+                # Count existing lines to continue from where we left off
+                with open(self.filepath, "r") as f:
+                    self._total_written = sum(1 for _ in f)
+                logger.info(
+                    "Resuming — appending to existing file with %d articles: %s",
+                    self._total_written, self.filepath,
+                )
+            else:
+                # Fresh run — truncate the file to avoid duplicates
+                open(self.filepath, "w").close()
+                logger.info("Starting fresh — cleared existing file: %s", self.filepath)
 
     def add(self, article_dict: dict):
         """Buffer an article for writing."""

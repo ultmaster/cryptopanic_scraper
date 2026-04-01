@@ -41,7 +41,12 @@ BASE_URL = "https://www.cryptopanic.com/news"
 EXTRACT_ARTICLES_JS = """
 return Array.from(document.querySelectorAll('div.news-row.news-row-link')).map((el, idx) => {
     const timeEl = el.querySelector('time');
-    const datetime = timeEl ? timeEl.getAttribute('datetime') : null;
+    const rawDate = timeEl ? timeEl.getAttribute('datetime') : null;
+    // Normalize to ISO 8601 — the attribute may be a locale string, not ISO
+    let datetime = null;
+    if (rawDate) {
+        try { datetime = new Date(rawDate).toISOString(); } catch(e) { datetime = rawDate; }
+    }
 
     const titleEl = el.querySelector('span.title-text span:first-child');
     const title = titleEl ? titleEl.textContent.trim() : '';

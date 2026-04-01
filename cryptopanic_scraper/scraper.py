@@ -39,6 +39,7 @@ class CryptoPanicScraper:
             filter_type=args.filter,
             start_date=args.start_date,
             end_date=args.end_date,
+            resume=args.resume,
         )
         self._driver_reconnects = 0
         self._scrape_start_time = None
@@ -75,6 +76,7 @@ class CryptoPanicScraper:
             self.driver = None
             logger.info("ChromeDriver closed.")
 
+    @retry(max_attempts=config.MAX_PAGE_RETRIES, backoff_base=config.RETRY_BACKOFF_BASE)
     def navigate_to_feed(self):
         """Navigate to the CryptoPanic news feed."""
         url = f"{config.BASE_URL}?filter={self.args.filter}"
@@ -84,6 +86,10 @@ class CryptoPanicScraper:
             EC.presence_of_element_located(
                 (By.CSS_SELECTOR, config.SELECTORS["news_row"])
             )
+        )
+        # Remove the sign-in blur overlay that blocks interaction
+        self.driver.execute_script(
+            'document.querySelectorAll(".blur-overlay").forEach(e => e.remove());'
         )
         logger.info("Page loaded successfully.")
 
@@ -135,19 +141,21 @@ class CryptoPanicScraper:
     @retry(max_attempts=config.MAX_PAGE_RETRIES, backoff_base=config.RETRY_BACKOFF_BASE)
     def _click_load_more(self):
         """Click the 'Load More' button once and wait for new content."""
+        # Use presence (not clickable) — the button is valid but far below the
+        # viewport, so Selenium considers it "not displayed / not clickable".
         btn = WebDriverWait(self.driver, config.PAGE_LOAD_TIMEOUT).until(
-            EC.element_to_be_clickable(
-                (By.CLASS_NAME, config.SELECTORS["load_more"])
+            EC.presence_of_element_located(
+                (By.CSS_SELECTOR, "button.btn-outline-primary")
             )
         )
         before_count = len(
             self.driver.find_elements(By.CSS_SELECTOR, config.SELECTORS["news_row"])
         )
+        # Scroll into view and click via JavaScript to bypass overlay / viewport issues
         self.driver.execute_script(
-            "arguments[0].scrollIntoView({block: 'center'});", btn,
+            "arguments[0].scrollIntoView({block: 'center'}); arguments[0].click();",
+            btn,
         )
-        time.sleep(0.3)
-        btn.click()
         time.sleep(config.SCROLL_PAUSE)
 
         # Wait for new elements to appear
@@ -204,7 +212,7 @@ class CryptoPanicScraper:
             const titleEl = el.querySelector('span.title-text span:first-child');
             results.push({
                 idx: idx,
-                datetime: el.querySelector('time')?.getAttribute('datetime'),
+                datetime: (() => { try { const t = el.querySelector('time'); return t ? new Date(t.getAttribute('datetime')).toISOString() : null; } catch(e) { return null; } })(),
                 title: titleEl ? titleEl.textContent.trim() : '',
                 href: el.querySelector('a.news-cell.nc-title')?.href || '',
                 source: el.querySelector('span.si-source-name')?.textContent?.trim() || '',
@@ -291,7 +299,14 @@ class CryptoPanicScraper:
             articles[idx].source_url = url
 
         success = sum(1 for u in resolved.values() if u)
-        logger.info("Resolved %d/%d URLs successfully.", success, len(url_map))
+        if success == 0 and len(url_map) > 0:
+            logger.warning(
+                "Could not resolve any source URLs. CryptoPanic may require "
+                "authentication for redirects. Use --no-resolve-urls to skip. "
+                "Source names and CryptoPanic URLs are still captured."
+            )
+        else:
+            logger.info("Resolved %d/%d URLs successfully.", success, len(url_map))
 
     # ------------------------------------------------------------------ #
     #  Date filtering
@@ -422,7 +437,9 @@ class CryptoPanicScraper:
                     if (rows.length === 0) return null;
                     const last = rows[rows.length - 1];
                     const t = last.querySelector('time');
-                    return t ? t.getAttribute('datetime') : null;
+                    if (!t) return null;
+                    try { return new Date(t.getAttribute('datetime')).toISOString(); }
+                    catch(e) { return t.getAttribute('datetime'); }
                 """)
                 if last_date and self._is_before_start_date(last_date):
                     logger.info(
@@ -438,11 +455,20 @@ class CryptoPanicScraper:
                 self.checkpoint.increment_pages()
                 consecutive_failures = 0
 
-                # Periodic progress during loading
+                # Periodic progress during loading — include oldest visible date
                 if self.checkpoint.pages_loaded % 10 == 0:
+                    oldest_vis = self.driver.execute_script("""
+                        const rows = document.querySelectorAll('div.news-row.news-row-link');
+                        if (rows.length === 0) return null;
+                        const t = rows[rows.length - 1].querySelector('time');
+                        if (!t) return null;
+                        try { return new Date(t.getAttribute('datetime')).toISOString(); }
+                        catch(e) { return t.getAttribute('datetime'); }
+                    """)
                     logger.info(
-                        "Pages loaded: %d, articles visible: %d",
+                        "Pages loaded: %d, articles visible: %d, oldest visible: %s",
                         self.checkpoint.pages_loaded, element_count,
+                        (oldest_vis or "N/A")[:19],
                     )
                 if self.checkpoint.pages_loaded % 50 == 0:
                     self.checkpoint.save()
@@ -478,7 +504,16 @@ class CryptoPanicScraper:
         raw_articles = self._extract_batch_from_dom()
         raw_articles = self._retry_incomplete_rows(raw_articles)
         articles = self._raw_to_articles(raw_articles)
-        logger.info("Extracted %d articles from DOM.", len(articles))
+
+        if articles:
+            newest = articles[0].date[:19]
+            oldest = articles[-1].date[:19]
+            logger.info(
+                "Extracted %d articles from DOM (newest: %s, oldest: %s)",
+                len(articles), newest, oldest,
+            )
+        else:
+            logger.info("Extracted 0 articles from DOM.")
 
         # Filter by date range
         if self.args.start_date or self.args.end_date:
@@ -504,6 +539,11 @@ class CryptoPanicScraper:
             if self.checkpoint.add_article(article_dict):
                 self.writer.add(article_dict)
                 new_count += 1
+                logger.debug(
+                    "[%d] %s | %s | %s",
+                    new_count, article.date[:19],
+                    article.source_name, article.title[:80],
+                )
 
         self.writer.flush()
         self.checkpoint.save()

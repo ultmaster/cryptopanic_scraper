@@ -21,14 +21,34 @@ def test_write_and_read():
         assert json.loads(lines[1])["title"] == "Article 2"
 
 
-def test_append_mode():
+def test_fresh_run_truncates():
+    """A non-resume run should truncate existing file to avoid duplicates."""
     with tempfile.TemporaryDirectory() as tmpdir:
         writer1 = JSONLWriter(tmpdir, "all", "2024-01-01", "2024-12-31")
         writer1.add({"title": "First"})
         writer1.flush()
 
-        # Second writer should append, not overwrite
+        # Second writer without resume=True should start fresh
         writer2 = JSONLWriter(tmpdir, "all", "2024-01-01", "2024-12-31")
+        assert writer2._total_written == 0
+        writer2.add({"title": "Second"})
+        writer2.flush()
+
+        with open(writer2.filepath, "r") as f:
+            lines = f.readlines()
+        assert len(lines) == 1
+        assert json.loads(lines[0])["title"] == "Second"
+
+
+def test_resume_appends():
+    """A resume run should append to existing file."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        writer1 = JSONLWriter(tmpdir, "all", "2024-01-01", "2024-12-31")
+        writer1.add({"title": "First"})
+        writer1.flush()
+
+        # Resume writer should keep existing data
+        writer2 = JSONLWriter(tmpdir, "all", "2024-01-01", "2024-12-31", resume=True)
         assert writer2._total_written == 1
         writer2.add({"title": "Second"})
         writer2.flush()
