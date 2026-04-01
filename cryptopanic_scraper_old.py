@@ -1,10 +1,12 @@
 from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.common.by import By
 import os
 import time
 import datetime
 import re
 import pickle
-import urllib
+import urllib.parse
 import argparse
 from webdriver_manager.chrome import ChromeDriverManager
 import pathlib
@@ -59,7 +61,8 @@ def setUp():
 
     # initialize the driver
     print("Initializing chromedriver.\n")
-    driver = webdriver.Chrome(ChromeDriverManager().install(), options=options)
+    service = Service(ChromeDriverManager().install())
+    driver = webdriver.Chrome(service=service, options=options)
 
     print("Navigating to %s\n" % url)
     driver.get(url)
@@ -74,12 +77,12 @@ def loadMore(len_elements):
     # Infinite scroll
 
     # Load More News
-    load_more = driver.find_element_by_class_name('btn-outline-primary')
+    load_more = driver.find_element(By.CLASS_NAME, 'btn-outline-primary')
     driver.execute_script("arguments[0].scrollIntoView();", load_more)
 
     time.sleep(SCROLL_PAUSE_TIME)
 
-    elements = driver.find_elements_by_css_selector('div.news-row.news-row-link')
+    elements = driver.find_elements(By.CSS_SELECTOR,'div.news-row.news-row-link')
     if len_elements < len(elements):
         if args.verbose:
             print("Loading %s more rows" % (len(elements) - len_elements))
@@ -93,50 +96,61 @@ def loadMore(len_elements):
 
 def getData():
     data = dict()
-    elements = driver.find_elements_by_css_selector('div.news-row.news-row-link')
+    elements = driver.find_elements(By.CSS_SELECTOR,'div.news-row.news-row-link')
 
-    total_rows = len(elements) - 7  # elements being returned are appended by 7 of the first rows.
+    total_rows = len(elements)
+    print("Found %s rows on the page.\n" % total_rows)
     print("Downloading Data...\n")
     start = datetime.datetime.now()
     print("Time Start: %s\n" % start)
 
     for i in range(total_rows):
-        if i >= args.limit:
+        if args.limit is not None and i >= args.limit:
             print(f'Limit argument of {args.limit} hit.')
             break
         time.sleep(.5)  # Busy sleep to keep cpu cool
         try:
+            el = elements[i]
+
             #  Get date posted
-            date_time = elements[i].find_element_by_css_selector('time').get_attribute('datetime')
-            # string_date = re.sub('-.*', '', date_time)
-            # date_time = datetime.datetime.strptime(string_date, "%a %b %d %Y %H:%M:%S %Z")
+            date_time = el.find_element(By.CSS_SELECTOR, 'time').get_attribute('datetime')
+
             #  Get Title of News
-            title = elements[i].find_element_by_css_selector("span.title-text span:nth-child(1)").text
+            title = el.find_element(By.CSS_SELECTOR, "span.title-text span:nth-child(1)").text
             if title == '':
                 driver.execute_script("arguments[0].scrollIntoView();",
-                                      elements[i].find_element_by_css_selector("span.title-text"))
-                title = elements[i].find_element_by_css_selector("span.title-text span:nth-child(1)").text
-
-            # Get Source URL
-            elements[i].find_element_by_css_selector("a.news-cell.nc-title").click()
-            source_name = elements[i].find_element_by_css_selector("span.si-source-name").text
-            source_link = driver.find_element_by_xpath("//div/h1/a[2]").get_property('href')
-            source_url = re.sub(".*=", '', urllib.parse.unquote(source_link))
-            driver.back()
+                                      el.find_element(By.CSS_SELECTOR, "span.title-text"))
+                title = el.find_element(By.CSS_SELECTOR, "span.title-text span:nth-child(1)").text
 
             #  Get Currency Tags
             currencies = []
-            currency_elements = elements[i].find_elements_by_class_name("colored-link")
+            currency_elements = el.find_elements(By.CLASS_NAME, "colored-link")
             for currency in currency_elements:
                 currencies.append(currency.text)
 
             votes = dict()
-            nc_votes = elements[i].find_elements_by_css_selector("span.nc-vote-cont")
+            nc_votes = el.find_elements(By.CSS_SELECTOR, "span.nc-vote-cont")
             for nc_vote in nc_votes:
                 vote = nc_vote.get_attribute('title')
+                if vote is None:
+                    continue
                 value = vote[:2]
                 action = vote.replace(value, '').replace('votes', '').strip()
                 votes[action] = int(value)
+
+            # Get Source URL (navigates away, so do this last)
+            link_el = el.find_element(By.CSS_SELECTOR, "a.news-cell.nc-title")
+            driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", link_el)
+            time.sleep(0.3)
+            link_el.click()
+            source_name = el.find_element(By.CSS_SELECTOR, "span.si-source-name").text
+            source_link = driver.find_element(By.XPATH, "//div/h1/a[2]").get_property('href')
+            source_url = re.sub(".*=", '', urllib.parse.unquote(str(source_link)))
+            driver.back()
+            driver.implicitly_wait(2.5)
+
+            # Re-query elements after navigation invalidated the old references
+            elements = driver.find_elements(By.CSS_SELECTOR, 'div.news-row.news-row-link')
 
             data[i] = {"Date": date_time,
                        "Title": title,
@@ -191,7 +205,7 @@ if __name__ == "__main__":
     print("Loading News Feed...\n")
     while True:
 
-        elements = driver.find_elements_by_css_selector('div.news-row.news-row-link')
+        elements = driver.find_elements(By.CSS_SELECTOR,'div.news-row.news-row-link')
 
         if len(elements) <= data_limit and loadMore(len(elements)):
             continue
