@@ -1,6 +1,7 @@
 """Retry decorator and URL resolution utilities."""
 
 import functools
+import html
 import logging
 import re
 import time
@@ -9,6 +10,21 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import requests
 
 logger = logging.getLogger("cryptopanic")
+
+_BLOCK_TAG_RE = re.compile(
+    r"(?is)<(script|style|noscript|svg|iframe|header|footer|nav|form)[^>]*>.*?</\1>"
+)
+_TAG_RE = re.compile(r"(?is)<[^>]+>")
+_COMMENT_RE = re.compile(r"(?is)<!--.*?-->")
+_WHITESPACE_RE = re.compile(r"[ \t\r\f\v]+")
+_PARAGRAPH_BREAK_RE = re.compile(r"\n{3,}")
+_ARTICLE_CONTAINER_PATTERNS = [
+    re.compile(
+        r'(?is)<(article|main|section|div)[^>]*?(?:itemprop=["\']articleBody["\']|class=["\'][^"\']*(?:article-body|entry-content|post-content|story-body|content-body|article__body|post-body|article-content|story-content)[^"\']*["\'])[^>]*>(.*?)</\1>'
+    ),
+    re.compile(r"(?is)<article\b[^>]*>(.*?)</article>"),
+]
+_PARAGRAPH_RE = re.compile(r"(?is)<p\b[^>]*>(.*?)</p>")
 
 
 def retry(max_attempts=3, backoff_base=2, exceptions=(Exception,)):
@@ -108,6 +124,97 @@ def resolve_urls_batch(url_map: dict, max_workers: int = 5,
                 results[idx] = future.result()
             except Exception as e:
                 logger.warning("URL resolution failed for article %s: %s", idx, e)
+                results[idx] = ""
+    return results
+
+
+def _html_fragment_to_text(fragment: str) -> str:
+    fragment = _COMMENT_RE.sub(" ", fragment or "")
+    fragment = re.sub(r"(?is)<br\s*/?>", "\n", fragment)
+    fragment = re.sub(r"(?is)</(p|div|section|article|li|h[1-6])>", "\n", fragment)
+    text = _TAG_RE.sub(" ", fragment)
+    text = html.unescape(text)
+    text = text.replace("\xa0", " ")
+    text = re.sub(r"[ \t]+\n", "\n", text)
+    text = re.sub(r"\n[ \t]+", "\n", text)
+    text = _WHITESPACE_RE.sub(" ", text)
+    text = _PARAGRAPH_BREAK_RE.sub("\n\n", text)
+    return text.strip()
+
+
+def extract_article_content_from_html(page_html: str, max_chars: int = 20000) -> str:
+    """Best-effort readable text extraction from article HTML."""
+    if not page_html:
+        return ""
+
+    cleaned_html = _BLOCK_TAG_RE.sub(" ", page_html)
+    candidates: list[str] = []
+
+    for pattern in _ARTICLE_CONTAINER_PATTERNS:
+        for match in pattern.finditer(cleaned_html):
+            text = _html_fragment_to_text(match.group(2) if match.lastindex and match.lastindex >= 2 else match.group(1))
+            if len(text) >= 80:
+                candidates.append(text)
+
+    paragraphs = [
+        _html_fragment_to_text(match.group(1))
+        for match in _PARAGRAPH_RE.finditer(cleaned_html)
+    ]
+    long_paragraphs = [p for p in paragraphs if len(p) >= 40]
+    if long_paragraphs:
+        candidates.append("\n\n".join(long_paragraphs[:80]))
+
+    if not candidates:
+        return ""
+
+    best = max(candidates, key=len)
+    if max_chars > 0:
+        best = best[:max_chars].rstrip()
+    return best
+
+
+def download_article_content(url: str, timeout: int = 15, max_chars: int = 20000) -> str:
+    """Fetch a publisher page and extract readable article text."""
+    if not url:
+        return ""
+
+    headers = {
+        "User-Agent": "Mozilla/5.0",
+        "Accept-Language": "en-US,en;q=0.9",
+    }
+    try:
+        resp = requests.get(url, timeout=timeout, headers=headers)
+        resp.raise_for_status()
+    except requests.RequestException as e:
+        logger.warning("Content download failed for %s: %s", url, e)
+        return ""
+
+    content_type = (resp.headers.get("content-type") or "").lower()
+    if content_type and "html" not in content_type:
+        logger.debug("Skipping non-HTML content at %s (%s)", url, content_type)
+        return ""
+
+    text = extract_article_content_from_html(resp.text, max_chars=max_chars)
+    if not text:
+        logger.debug("No readable article text extracted from %s", url)
+    return text
+
+
+def download_article_content_batch(url_map: dict, max_workers: int = 4,
+                                   timeout: int = 15, max_chars: int = 20000) -> dict:
+    """Download and extract article text for multiple URLs in parallel."""
+    results = {}
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {
+            executor.submit(download_article_content, url, timeout, max_chars): idx
+            for idx, url in url_map.items()
+        }
+        for future in as_completed(futures):
+            idx = futures[future]
+            try:
+                results[idx] = future.result()
+            except Exception as e:
+                logger.warning("Content extraction failed for article %s: %s", idx, e)
                 results[idx] = ""
     return results
 

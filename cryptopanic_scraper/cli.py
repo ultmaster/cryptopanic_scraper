@@ -17,6 +17,16 @@ def parse_args(argv=None):
                         help="News filter type (default: all)")
     parser.add_argument("-s", "--headless", action="store_true",
                         help="Run Chrome in headless mode")
+    parser.add_argument("--manual-challenge-timeout", type=int, default=300,
+                        help="When not headless, wait up to N seconds for you to solve a browser challenge (default: 300)")
+    parser.add_argument("--debugger-address", type=str, default=None,
+                        help="Attach Selenium to an already-running Chrome via host:port, e.g. 127.0.0.1:9222")
+    parser.add_argument("--download-content", action="store_true",
+                        help="Fetch and extract article body text from each resolved source URL")
+    parser.add_argument("--content-max-chars", type=int, default=20000,
+                        help="Maximum extracted characters to store per article (default: 20000)")
+    parser.add_argument("--extract-every-pages", type=int, default=25,
+                        help="During long scrolling runs, extract and persist visible articles every N loaded pages (default: 25)")
     parser.add_argument("-l", "--limit", type=int, default=None,
                         help="Maximum number of articles to scrape")
 

@@ -44,7 +44,7 @@ class CheckpointManager:
             logger.debug("Skipping duplicate: %s", article_dict.get("title", "")[:50])
             return False
         self.seen_keys.add(key)
-        self.articles.append(article_dict)
+        self.articles.append(self._compact_article(article_dict))
         self.articles_since_save += 1
 
         # Track date range
@@ -59,6 +59,15 @@ class CheckpointManager:
         if self.articles_since_save >= self.interval:
             self.save()
         return True
+
+    def _compact_article(self, article_dict: dict) -> dict:
+        """Keep checkpoints resumable without storing large article bodies."""
+        compact = dict(article_dict)
+        content_text = compact.get("content_text", "")
+        if content_text:
+            compact["content_text"] = ""
+            compact["content_length"] = len(content_text)
+        return compact
 
     def add_failed(self, info: dict):
         """Record a failed article extraction."""

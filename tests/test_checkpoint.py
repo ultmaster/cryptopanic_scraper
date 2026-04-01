@@ -77,3 +77,15 @@ def test_failed_articles():
         mgr2.load()
         assert len(mgr2.failed_articles) == 1
         assert mgr2.failed_articles[0]["error"] == "timeout"
+
+
+def test_checkpoint_compacts_large_content():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        mgr = _make_manager(tmpdir)
+        mgr.add_article({
+            "title": "A",
+            "date": "2024-01-01T00:00:00Z",
+            "content_text": "x" * 100,
+        })
+        assert mgr.articles[0]["content_text"] == ""
+        assert mgr.articles[0]["content_length"] == 100

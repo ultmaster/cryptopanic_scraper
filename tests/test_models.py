@@ -12,6 +12,7 @@ def test_to_dict_roundtrip():
         source_name="CoinDesk",
         source_url="https://coindesk.com/article",
         cryptopanic_url="https://cryptopanic.com/news/12345/click/",
+        content_text="Body text",
     )
     d = article.to_dict()
     restored = Article.from_dict(d)
@@ -53,3 +54,4 @@ def test_defaults():
     assert article.source_name == ""
     assert article.source_url == ""
     assert article.cryptopanic_url == ""
+    assert article.content_text == ""

@@ -13,6 +13,7 @@ class Article:
     source_name: str = ""
     source_url: str = ""                         # Resolved external URL
     cryptopanic_url: str = ""                    # CryptoPanic redirect URL
+    content_text: str = ""                       # Extracted article body text
 
     def to_dict(self) -> dict:
         return asdict(self)

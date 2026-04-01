@@ -48,6 +48,7 @@
   * [Basic Usage](#basic-usage)
   * [Date Range Scraping](#date-range-scraping)
   * [Checkpointing and Resume](#checkpointing-and-resume)
+  * [Cloudflare Challenges](#cloudflare-challenges)
   * [All Options](#all-options)
 * [Project Structure](#project-structure)
 * [Output Format](#output-format)
@@ -77,7 +78,10 @@ This project was designed to scrape the data from their website so it could be l
 - **Network resilience** -- automatic WebDriver reconnection on crash (up to 5 attempts), checkpoint saved before every reconnect
 - **Bulk extraction** -- articles are extracted from the DOM in a single JavaScript call, avoiding stale element issues
 - **Parallel URL resolution** -- source URLs are resolved via `requests` in a thread pool, independent of Selenium
+- **Optional content download** -- fetch and extract readable article body text from each resolved source URL
 - **JSONL output** -- one JSON object per line, append-friendly and incremental
+- **Manual browser attach** -- optionally connect Selenium to an already-running Chrome session so you can clear site challenges before scraping
+- **Incremental backfills** -- long historical runs can extract and persist matches every N pages instead of waiting for one final DOM dump
 
 ### Built With
 
@@ -145,6 +149,16 @@ Skip source URL resolution for faster scraping:
 python -m cryptopanic_scraper --limit 100 --headless --no-resolve-urls
 ```
 
+Download readable article body text into the JSONL:
+```sh
+python -m cryptopanic_scraper --limit 100 --download-content
+```
+
+If you expect to solve a site challenge manually, keep the browser open and wait for up to 5 minutes:
+```sh
+python -m cryptopanic_scraper --limit 100 --manual-challenge-timeout 300
+```
+
 You can also use the root convenience script:
 ```sh
 python run_scraper.py --headless -v
@@ -162,6 +176,16 @@ Scrape all the way back to 2016:
 python -m cryptopanic_scraper --start-date 2016-01-01 --headless
 ```
 
+Backfill a historical window such as calendar year 2016:
+```sh
+python -m cryptopanic_scraper --start-date 2016-01-01 --end-date 2016-12-31 --resume
+```
+
+For long historical runs, the scraper now re-extracts and persists visible in-range rows every `--extract-every-pages` pages. That makes deep backfills safer to interrupt and resume:
+```sh
+python -m cryptopanic_scraper --start-date 2016-01-01 --end-date 2016-12-31 --extract-every-pages 10 --resume
+```
+
 ### Checkpointing and Resume
 
 The scraper automatically saves checkpoints to `data/checkpoints/`. Checkpoints are saved:
@@ -174,12 +198,46 @@ If a scrape is interrupted, resume it:
 python -m cryptopanic_scraper --start-date 2016-01-01 --headless --resume
 ```
 
+### Cloudflare Challenges
+
+CryptoPanic may occasionally return a Cloudflare interstitial page instead of the news feed. When that happens:
+
+- `--headless` runs will fail immediately with a clear error explaining that the browser hit a blocking page
+- non-headless runs will keep Chrome open and wait up to `--manual-challenge-timeout` seconds for you to solve the challenge manually
+
+If the challenge keeps looping in Selenium-controlled Chrome, use a normal Chrome session first and then attach the scraper to it.
+
+1. Launch Chrome with remote debugging enabled:
+   ```sh
+   google-chrome --remote-debugging-port=9222 --user-data-dir=/tmp/cryptopanic-debug-profile 'https://www.cryptopanic.com/news?filter=all'
+   ```
+2. Complete the challenge in that Chrome window until the actual CryptoPanic feed is visible.
+3. Attach the scraper to the same session:
+   ```sh
+   python -m cryptopanic_scraper --limit 100 --debugger-address 127.0.0.1:9222
+   ```
+
+This attach flow reuses your existing browser session instead of launching a fresh Selenium-controlled profile.
+
+### Content Download Notes
+
+When `--download-content` is enabled, the scraper:
+
+- resolves the CryptoPanic redirect to the publisher URL
+- downloads the publisher HTML with `requests`
+- extracts a best-effort readable text body and stores it as `content_text` in the JSONL
+
+This is intentionally heuristic. Some publishers will return clean article text, while others may block requests or render content dynamically and produce an empty `content_text`.
+
 ### All Options
 
 ```
 usage: __main__.py [-h] [-v]
                    [-f {all,hot,rising,bullish,bearish,lol,commented,important,saved}]
-                   [-s] [-l LIMIT] [--start-date START_DATE]
+                   [-s] [--manual-challenge-timeout MANUAL_CHALLENGE_TIMEOUT]
+                   [--debugger-address DEBUGGER_ADDRESS] [--download-content]
+                   [--content-max-chars CONTENT_MAX_CHARS]
+                   [--extract-every-pages EXTRACT_EVERY_PAGES] [-l LIMIT] [--start-date START_DATE]
                    [--end-date END_DATE] [--output-dir OUTPUT_DIR] [--resume]
                    [--checkpoint-interval CHECKPOINT_INTERVAL]
                    [--log-file LOG_FILE] [--max-retries MAX_RETRIES]
@@ -190,6 +248,18 @@ options:
   -v, --verbose         Increase output verbosity (DEBUG level logging)
   -f, --filter          News filter type (default: all)
   -s, --headless        Run Chrome in headless mode
+  --manual-challenge-timeout
+                        When not headless, wait up to N seconds for you to
+                        solve a browser challenge (default: 300)
+  --debugger-address    Attach Selenium to an already-running Chrome via
+                        host:port, e.g. 127.0.0.1:9222
+  --download-content    Fetch and extract article body text from each
+                        resolved source URL
+  --content-max-chars   Maximum extracted characters to store per article
+                        (default: 20000)
+  --extract-every-pages
+                        During long scrolling runs, extract and persist
+                        visible articles every N loaded pages (default: 25)
   -l, --limit           Maximum number of articles to scrape
   --start-date          Oldest article date (YYYY-MM-DD, e.g. 2016-01-01)
   --end-date            Newest article date (YYYY-MM-DD, default: today)
@@ -237,7 +307,8 @@ Each line contains:
   "votes": {"bullish": 45, "bearish": 3},
   "source_name": "CoinDesk",
   "source_url": "https://coindesk.com/article/...",
-  "cryptopanic_url": "https://cryptopanic.com/news/12345/click/"
+  "cryptopanic_url": "https://cryptopanic.com/news/12345/click/",
+  "content_text": "Bitcoin climbed above ..."
 }
 ```
 
