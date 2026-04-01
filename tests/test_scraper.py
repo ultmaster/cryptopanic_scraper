@@ -71,6 +71,19 @@ def test_load_more_looks_stuck_false_for_normal_button():
     assert _load_more_looks_stuck(state) is False
 
 
+def test_load_more_looks_stuck_true_for_loading_text_not_disabled():
+    """Button shows 'Loading...' but disabled has been cleared — still stuck."""
+    state = {
+        "present": True,
+        "text": "Loading...",
+        "disabled": False,
+        "aria_disabled": False,
+        "class_name": "btn btn-outline-primary",
+        "has_spinner": False,
+    }
+    assert _load_more_looks_stuck(state) is True
+
+
 def test_maybe_reuse_attached_feed_when_rows_present():
     args = SimpleNamespace(
         filter="all",

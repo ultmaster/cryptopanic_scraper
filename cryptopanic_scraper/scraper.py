@@ -50,18 +50,20 @@ def _feed_state_changed(before_state: dict, after_state: dict) -> bool:
 
 
 def _load_more_looks_stuck(button_state: dict) -> bool:
-    """Heuristic for a Load More button stuck in a loading spinner state."""
+    """Heuristic for a Load More button stuck in a loading state."""
     text = (button_state.get("text") or "").strip().lower()
     class_name = (button_state.get("class_name") or "").lower()
-    return bool(
-        button_state.get("present")
-        and (button_state.get("disabled") or button_state.get("aria_disabled"))
-        and (
-            "loading" in text
-            or "spinner" in class_name
-            or button_state.get("has_spinner")
-        )
-    )
+    if not button_state.get("present"):
+        return False
+    # Classic stuck: disabled + spinner indicators
+    if (button_state.get("disabled") or button_state.get("aria_disabled")) and (
+        "loading" in text or "spinner" in class_name or button_state.get("has_spinner")
+    ):
+        return True
+    # Text stuck at "loading..." regardless of disabled state (dead AJAX)
+    if "loading" in text:
+        return True
+    return False
 
 
 class CryptoPanicScraper:
@@ -424,7 +426,21 @@ class CryptoPanicScraper:
         """)
 
     def _revive_stuck_load_more(self):
-        """Try to unstick a greyed-out Loading button by forcing a fresh click."""
+        """Try to unstick a stuck Loading button by resetting Vue state."""
+        # First try: reset the Vue component's loadingMore flag.
+        # When the AJAX call dies, Vue keeps loadingMore=true which locks the
+        # button in "Loading..." state.  Resetting it restores "Load more"
+        # and allows the next click to fire a fresh AJAX request.
+        self.driver.execute_script("""
+            const appPane = document.querySelector('.app-content-panes');
+            if (appPane && appPane.__vue__) {
+                appPane.__vue__.loadingMore = false;
+            }
+        """)
+        time.sleep(config.SCROLL_PAUSE)
+
+        # Fallback: also clear disabled state and force-click via DOM events
+        # in case the Vue reset alone is not enough.
         self.driver.execute_script("""
             const btn = document.querySelector('button.btn-outline-primary');
             if (!btn) return false;
